@@ -1,0 +1,29 @@
+name: Deploy to VPS (Pull & Restart)
+
+on:
+    workflow_run:
+        workflows: ["Build & Push Docker Image (GHCR)"]
+        types:
+            - completed
+
+jobs:
+    deploy:
+        if: ${{ github.event.workflow_run.conclusion == 'success' }}
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: SSH deploy (pull latest image)
+              uses: appleboy/ssh-action@v1.0.3
+              with:
+                  host: ${{ secrets.VPS_HOST }}
+                  username: ${{ secrets.VPS_USER }}
+                  key: ${{ secrets.VPS_SSH_KEY }}
+                  script: |
+                      set -e
+                      cd ${{ secrets.VPS_APP_DIR }}
+
+                      docker compose pull
+                      docker compose up -d
+
+                      docker image prune -f
+                      docker ps

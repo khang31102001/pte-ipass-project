@@ -1,0 +1,7 @@
+export enum MEDIA {
+    STUDENT_STORY = "STUDENT_STORY",
+    FACILITY = "FACILITY",
+    REVIEW = "REVIEW",
+    VIDEO = "VIDEO",
+    IMAGE = "IMAGE",
+}

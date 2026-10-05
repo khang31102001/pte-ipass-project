@@ -1,0 +1,14 @@
+services:
+    backend-ipte:
+        image: ghcr.io/tranthanhhuy19032001/backend-ipte:latest
+        container_name: backend-ipte
+        env_file:
+            - .env
+        ports:
+            - "4000:4000"
+        restart: unless-stopped
+        networks:
+            - ipte-network
+networks:
+    ipte-network:
+        external: true

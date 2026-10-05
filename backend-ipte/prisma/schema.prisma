@@ -1,0 +1,482 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model comment {
+  comment_id        Int       @id @default(autoincrement())
+  user_id           Int?
+  course_id         Int?
+  news_id           Int?
+  knowledge_id      Int?
+  parent_comment_id Int?
+  content           String
+  is_approved       Boolean?  @default(true)
+  created_at        DateTime? @default(now()) @db.Timestamp(6)
+  updated_at        DateTime? @default(now()) @db.Timestamp(6)
+  created_by        String?   @db.VarChar(50)
+  updated_by        String?   @db.VarChar(50)
+  version           Int?      @default(1)
+  rating            Int?
+  likes             Int?      @default(0)
+  user_name         String?   @db.VarChar(100)
+  user_avatar       String?   @db.VarChar(255)
+  course            course?   @relation(fields: [course_id], references: [course_id], onDelete: Cascade, onUpdate: NoAction)
+  comment           comment?  @relation("commentTocomment", fields: [parent_comment_id], references: [comment_id], onDelete: Cascade, onUpdate: NoAction)
+  other_comment     comment[] @relation("commentTocomment")
+  user              user?     @relation(fields: [user_id], references: [user_id], onUpdate: NoAction)
+
+  @@index([course_id], map: "idx_comment_course")
+  @@index([knowledge_id], map: "idx_comment_knowledge")
+  @@index([news_id], map: "idx_comment_news")
+  @@index([parent_comment_id], map: "idx_comment_parent")
+}
+
+model course {
+  course_id        Int              @id @default(autoincrement())
+  course_code      String?          @unique @db.VarChar(50)
+  course_name      String           @db.VarChar(255)
+  slug             String?          @unique @db.VarChar(255)
+  title            String?
+  description      String?
+  level            course_level     @default(BEGINNER)
+  mode             course_mode      @default(ONLINE)
+  language         String?          @default("en") @db.VarChar(50)
+  price            Decimal?         @default(0) @db.Decimal(12, 2)
+  duration         String?          @db.VarChar(255)
+  start_date       DateTime?        @db.Date
+  end_date         DateTime?        @db.Date
+  image            String?
+  created_at       DateTime?        @default(now()) @db.Timestamp(6)
+  updated_at       DateTime?        @default(now()) @db.Timestamp(6)
+  created_by       String?          @db.VarChar(50)
+  updated_by       String?          @db.VarChar(50)
+  version          Int?             @default(1)
+  category         course_category?
+  schedule         String?          @db.VarChar(255)
+  tuition          String?          @db.VarChar(255)
+  content          String?
+  category_id      Int?
+  is_featured      Boolean?         @default(false)
+  is_disabled      Boolean?         @default(false)
+  meta_title       String?
+  meta_description String?
+  audience         String[]         @default([])
+  keywords         String[]         @default([])
+  schema_enabled   Boolean?         @default(false)
+  schema_mode      String?          @db.VarChar(50)
+  schema_data      String?
+  benefits         String?
+  seo_score        Int?
+  delete_image_url String?
+  category_type    String?          @db.VarChar(255)
+  comment          comment[]
+
+  @@index([level], map: "idx_course_level")
+  @@index([mode], map: "idx_course_mode")
+  @@index([slug], map: "idx_course_slug")
+}
+
+model news {
+  news_id          Int            @id @default(autoincrement())
+  author_id        Int?
+  category_id      Int?
+  image            String?
+  title            String         @db.VarChar(255)
+  slug             String         @unique @db.VarChar(255)
+  description      String?
+  content          String
+  status           publish_status @default(DRAFT)
+  published_at     DateTime?      @db.Timestamp(6)
+  tags             String[]       @default([])
+  keywords         String[]       @default([])
+  created_at       DateTime?      @default(now()) @db.Timestamp(6)
+  updated_at       DateTime?      @default(now()) @db.Timestamp(6)
+  created_by       String?        @db.VarChar(50)
+  updated_by       String?        @db.VarChar(50)
+  version          Int?           @default(1)
+  is_prominent     Boolean?       @default(false)
+  category_type    String?        @db.VarChar(255)
+  is_featured      Boolean?       @default(false)
+  is_disabled      Boolean?       @default(false)
+  meta_title       String?
+  meta_description String?
+  audience         String[]       @default([])
+  schema_enabled   Boolean?       @default(false)
+  schema_mode      String?        @db.VarChar(50)
+  schema_data      String?
+  seo_score        Int?
+  start_date       DateTime?      @db.Date
+  end_date         DateTime?      @db.Date
+  delete_image_url String?
+  user             user?          @relation(fields: [author_id], references: [user_id], onUpdate: NoAction)
+}
+
+model permission {
+  permission_id          Int               @id @default(autoincrement())
+  permission_name        String            @unique @db.VarChar(50)
+  permission_description String?
+  created_at             DateTime?         @default(now()) @db.Timestamp(6)
+  updated_at             DateTime?         @default(now()) @db.Timestamp(6)
+  created_by             String?           @db.VarChar(50)
+  updated_by             String?           @db.VarChar(50)
+  version                Int?              @default(1)
+  role_permission        role_permission[]
+}
+
+model refresh_token {
+  id              Int       @id @default(autoincrement())
+  user_id         Int
+  jti             String    @db.VarChar(100)
+  token_hash      String    @db.VarChar(255)
+  session_id      String    @db.Uuid
+  device_name     String?   @db.VarChar(100)
+  user_agent      String?
+  ip              String?   @db.VarChar(45)
+  expires_at      DateTime  @db.Timestamp(6)
+  last_used_at    DateTime? @default(now()) @db.Timestamp(6)
+  revoked_at      DateTime? @db.Timestamp(6)
+  replaced_by_jti String?   @db.VarChar(100)
+  created_at      DateTime? @default(now()) @db.Timestamp(6)
+  updated_at      DateTime? @default(now()) @db.Timestamp(6)
+  created_by      String?   @db.VarChar(50)
+  updated_by      String?   @db.VarChar(50)
+  version         Int?      @default(1)
+}
+
+model role {
+  role_id          Int               @id @default(autoincrement())
+  role_name        String            @unique @db.VarChar(50)
+  role_description String?
+  created_at       DateTime?         @default(now()) @db.Timestamp(6)
+  updated_at       DateTime?         @default(now()) @db.Timestamp(6)
+  created_by       String?           @db.VarChar(50)
+  updated_by       String?           @db.VarChar(50)
+  version          Int?              @default(1)
+  role_permission  role_permission[]
+  user_role        user_role[]
+}
+
+model role_permission {
+  role_id       Int
+  permission_id Int
+  created_at    DateTime?  @default(now()) @db.Timestamp(6)
+  updated_at    DateTime?  @default(now()) @db.Timestamp(6)
+  created_by    String?    @db.VarChar(50)
+  updated_by    String?    @db.VarChar(50)
+  version       Int?       @default(1)
+  permission    permission @relation(fields: [permission_id], references: [permission_id], onDelete: Cascade, onUpdate: NoAction)
+  role          role       @relation(fields: [role_id], references: [role_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([role_id, permission_id])
+}
+
+model student {
+  student_id Int       @id @default(autoincrement())
+  user_id    Int?      @unique
+  phone      String?   @db.VarChar(30)
+  dob        DateTime? @db.Date
+  address    String?
+  note       String?
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  updated_at DateTime? @default(now()) @db.Timestamp(6)
+  created_by String?   @db.VarChar(50)
+  updated_by String?   @db.VarChar(50)
+  version    Int?      @default(1)
+  full_name  String    @db.VarChar(255)
+  course_id  Int?
+  slug       String    @db.VarChar(255)
+  user       user?     @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model tag {
+  tag_id      Int       @id @default(autoincrement())
+  name        String    @unique @db.VarChar(100)
+  description String?
+  slug        String    @unique @db.VarChar(150)
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+  updated_at  DateTime? @default(now()) @db.Timestamp(6)
+  created_by  String?   @db.VarChar(50)
+  updated_by  String?   @db.VarChar(50)
+  version     Int?      @default(1)
+}
+
+model teacher {
+  teacher_id       Int       @id @default(autoincrement())
+  user_id          Int?
+  bio              String?
+  name             String    @db.VarChar(100)
+  image            String?   @db.VarChar(255)
+  overall_score    Decimal?  @default(0) @db.Decimal(3, 2)
+  listening_score  Decimal?  @default(0) @db.Decimal(3, 2)
+  speaking_score   Decimal?  @default(0) @db.Decimal(3, 2)
+  reading_score    Decimal?  @default(0) @db.Decimal(3, 2)
+  writing_score    Decimal?  @default(0) @db.Decimal(3, 2)
+  created_at       DateTime? @default(now()) @db.Timestamp(6)
+  updated_at       DateTime? @default(now()) @db.Timestamp(6)
+  created_by       String?   @db.VarChar(50)
+  updated_by       String?   @db.VarChar(50)
+  version          Int?      @default(1)
+  slug             String    @default("") @db.VarChar(255)
+  content          String?
+  delete_image_url String?
+  seo_score        Int?
+}
+
+model user {
+  user_id    Int         @id @default(autoincrement())
+  username   String      @unique @db.VarChar(50)
+  password   String      @db.VarChar(255)
+  email      String      @unique @db.VarChar(100)
+  full_name  String?     @db.VarChar(100)
+  created_at DateTime?   @default(now()) @db.Timestamp(6)
+  updated_at DateTime?   @default(now()) @db.Timestamp(6)
+  created_by String?     @db.VarChar(50)
+  updated_by String?     @db.VarChar(50)
+  version    Int?        @default(1)
+  avatar     String?     @db.VarChar(50)
+  is_active  Boolean?    @default(true)
+  bio        String?
+  slug       String?     @db.VarChar(50)
+  address    String?
+  comment    comment[]
+  news       news[]
+  student    student?
+  user_role  user_role[]
+}
+
+model user_role {
+  user_id    Int
+  role_id    Int
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  updated_at DateTime? @default(now()) @db.Timestamp(6)
+  created_by String?   @db.VarChar(50)
+  updated_by String?   @db.VarChar(50)
+  version    Int?      @default(1)
+  role       role      @relation(fields: [role_id], references: [role_id], onDelete: Cascade, onUpdate: NoAction)
+  user       user      @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, role_id])
+}
+
+model category {
+  category_id        Int       @id @default(autoincrement())
+  icon               String?
+  name               String    @db.VarChar(200)
+  slug               String    @db.VarChar(200)
+  description        String?
+  parent_id          BigInt?
+  category_type      String    @db.VarChar(50)
+  meta_title         String?   @db.VarChar(255)
+  meta_description   String?
+  h1_heading         String?   @db.VarChar(255)
+  seo_content_top    String?
+  seo_content_bottom String?
+  canonical_url      String?
+  noindex            Boolean?  @default(false)
+  url                String?
+  level              Int?
+  is_featured        Boolean?  @default(false)
+  is_disable         Boolean?  @default(false)
+  created_at         DateTime? @default(now()) @db.Timestamp(6)
+  updated_at         DateTime? @default(now()) @db.Timestamp(6)
+  created_by         String?   @db.VarChar(50)
+  updated_by         String?   @db.VarChar(50)
+  version            Int?      @default(1)
+  banner             banner[]
+}
+
+model media {
+  media_id         Int       @id @default(autoincrement())
+  title            String?
+  description      String?
+  image_name       String?   @db.VarChar(255)
+  delete_image_url String?
+  image_url        String?
+  video_url        String?
+  is_disabled      Boolean?  @default(false)
+  media_type       String?   @db.VarChar(255)
+  created_at       DateTime? @default(now()) @db.Timestamp(6)
+  updated_at       DateTime? @default(now()) @db.Timestamp(6)
+  created_by       String?   @db.VarChar(50)
+  updated_by       String?   @db.VarChar(50)
+  version          Int?      @default(1)
+  category_id      Int?
+  category_type    String?   @db.VarChar(255)
+  href             String?   @db.VarChar(255)
+}
+
+model consultation {
+  consultation_id Int       @id @default(autoincrement())
+  name            String    @db.VarChar(255)
+  email           String    @db.VarChar(255)
+  phone           String?   @db.VarChar(30)
+  course_id       Int?
+  message         String?
+  status          String    @default("NEW") @db.VarChar(50)
+  created_at      DateTime? @default(now()) @db.Timestamp(6)
+  updated_at      DateTime? @default(now()) @db.Timestamp(6)
+  created_by      String?   @db.VarChar(50)
+  updated_by      String?   @db.VarChar(50)
+  version         Int?      @default(1)
+  target_score    String?   @db.VarChar(255)
+}
+
+model deleted_image {
+  deleted_image_id Int    @id @default(autoincrement())
+  delete_image_url String
+}
+
+model banner {
+  banner_id          Int       @id @default(autoincrement())
+  title              String    @db.VarChar(255)
+  sub_title          String    @db.VarChar(255)
+  placement          String    @db.VarChar(255)
+  image              String?
+  delete_image_url   String?
+  action_type        String    @db.VarChar(255)
+  action_label       String    @db.VarChar(255)
+  is_active          Boolean?  @default(true)
+  order              Int?
+  start_date         DateTime? @db.Date
+  end_date           DateTime? @db.Date
+  created_at         DateTime? @default(now()) @db.Timestamp(6)
+  updated_at         DateTime? @default(now()) @db.Timestamp(6)
+  created_by         String?   @db.VarChar(50)
+  updated_by         String?   @db.VarChar(50)
+  version            Int?      @default(1)
+  action_url         String?   @db.VarChar(255)
+  category_id        Int
+  icon               String?   @db.VarChar(50)
+  name               String?   @db.VarChar(64)
+  slug               String?   @db.VarChar(50)
+  description        String?   @db.VarChar(512)
+  parent_id          Int?
+  category_type      String?   @db.VarChar(50)
+  meta_title         String?   @db.VarChar(50)
+  meta_description   String?   @db.VarChar(50)
+  h1_heading         String?   @db.VarChar(50)
+  seo_content_top    String?   @db.VarChar(50)
+  seo_content_bottom String?   @db.VarChar(50)
+  canonical_url      String?   @db.VarChar(50)
+  noindex            Boolean?
+  url                String?   @db.VarChar(50)
+  level              Int?
+  is_featured        Boolean?
+  is_disable         Boolean?
+  category           category  @relation(fields: [category_id], references: [category_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_banner_category")
+}
+
+model information {
+  information_id   Int       @id(map: "ainformation_pkey") @default(autoincrement())
+  title            String?   @db.VarChar(255)
+  description      String?
+  mission          String?
+  vision           String?
+  email            String?   @db.VarChar(255)
+  phone            String?   @db.VarChar(50)
+  hotline          String?   @db.VarChar(50)
+  address          String?
+  social_url       String?   @db.VarChar(255)
+  category_type    String?   @db.VarChar(255)
+  map_url          String?
+  slug             String?   @db.VarChar(255)
+  image            String?
+  delete_image_url String?
+  category_id      Int?
+  created_at       DateTime? @default(now()) @db.Timestamp(6)
+  updated_at       DateTime? @default(now()) @db.Timestamp(6)
+  created_by       String?   @db.VarChar(50)
+  updated_by       String?   @db.VarChar(50)
+  version          Int?      @default(1)
+  video            String?   @db.VarChar
+  content          String?
+}
+
+model document {
+  document_id      Int       @id @default(autoincrement())
+  author_id        Int?
+  category_id      Int?
+  image            String?
+  title            String    @db.VarChar(255)
+  slug             String    @unique @db.VarChar(255)
+  description      String?
+  content          String
+  status           String?   @db.VarChar(50)
+  published_at     DateTime? @db.Timestamp(6)
+  tags             String[]  @default([])
+  keywords         String[]  @default([])
+  is_prominent     Boolean?  @default(false)
+  category_type    String?   @db.VarChar(255)
+  is_featured      Boolean?  @default(false)
+  is_disabled      Boolean?  @default(false)
+  meta_title       String?
+  meta_description String?
+  audience         String[]  @default([])
+  schema_enabled   Boolean?  @default(false)
+  schema_mode      String?   @db.VarChar(50)
+  schema_data      String?
+  seo_score        Int?
+  start_date       DateTime? @db.Date
+  end_date         DateTime? @db.Date
+  delete_image_url String?
+  created_at       DateTime? @default(now()) @db.Timestamp(6)
+  updated_at       DateTime? @default(now()) @db.Timestamp(6)
+  created_by       String?   @db.VarChar(50)
+  updated_by       String?   @db.VarChar(50)
+  version          Int?      @default(1)
+}
+
+enum contact_method {
+  PHONE
+  EMAIL
+  ZALO
+  MESSENGER
+  WHATSAPP
+  OTHER
+}
+
+enum course_category {
+  BASIS
+  ADVANCE
+  IPASS
+}
+
+enum course_level {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum course_mode {
+  ONLINE
+  OFFLINE
+  HYBRID
+}
+
+enum enrollment_status {
+  INTERESTED
+  REGISTERED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum payment_status {
+  UNPAID
+  PAID
+  PARTIAL
+  REFUNDED
+}
+
+enum publish_status {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}

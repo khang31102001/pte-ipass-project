@@ -1,0 +1,36 @@
+services:
+    db-postgres:
+        image: postgres:15
+        container_name: db-postgres
+        restart: unless-stopped
+        environment:
+            POSTGRES_USER: ipte_admin_db
+            POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+            POSTGRES_DB: ipte
+            POSTGRES_INITDB_ARGS: "--auth=scram-sha-256"
+        ports:
+            - "127.0.0.1:5432:5432"
+        volumes:
+            - postgres_data:/var/lib/postgresql/data
+        secrets:
+            - postgres_password
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ipte_admin_db -d ipte || exit 1"]
+            interval: 5s
+            timeout: 3s
+            retries: 10
+        # Tăng bảo mật container
+        security_opt:
+            - no-new-privileges:true
+        networks:
+            - ipte-network
+volumes:
+    postgres_data:
+
+secrets:
+    postgres_password:
+        file: ./secrets/postgres_password.txt
+
+networks:
+    ipte-network:
+        external: true
