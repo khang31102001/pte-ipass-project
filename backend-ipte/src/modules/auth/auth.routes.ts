@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
-import { authenticate, clientIp } from "../../auth/middleware";
+import { authenticateAllowTemp, clientIp } from "../../auth/middleware";
 import { env, isProd } from "../../config/env";
 import { handler } from "../../core/http/async";
 import { unauthorized } from "../../core/http/errors";
@@ -62,7 +62,7 @@ authRouter.post(
 /** Phiên hiện tại: { user, role, permissions[] } (contract của AuthAdapter phía FE). */
 authRouter.get(
   "/me",
-  authenticate,
+  authenticateAllowTemp,
   handler(async (req, res) => {
     if (!req.auth) throw unauthorized();
     return ok(res, await toSession(req.auth.userId));
@@ -71,7 +71,7 @@ authRouter.get(
 
 authRouter.post(
   "/change-password",
-  authenticate,
+  authenticateAllowTemp,
   handler(async (req, res) => {
     if (!req.auth) throw unauthorized();
     await changePassword(req.auth, parseBody(changePasswordSchema, req.body));

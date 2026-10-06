@@ -92,4 +92,18 @@ describe("Authentication", () => {
     expect(row.passwordHash.startsWith("$argon2id$")).toBe(true);
     expect(row.passwordHash).not.toContain(PASSWORD);
   });
+
+  it("mật khẩu tạm: chỉ gọi được /auth/me và đổi mật khẩu, các API khác 403 cho tới khi đổi", async () => {
+    const { auth, user } = await loginAs("Sales");
+    await prisma.user.update({ where: { id: user.id }, data: { mustChangePassword: true } });
+    expect((await api().get("/api/students").set(auth)).status).toBe(403);
+    const me = await api().get("/api/auth/me").set(auth);
+    expect(me.status).toBe(200);
+    expect(me.body.data.user.mustChangePassword).toBe(true);
+    const change = await api().post("/api/auth/change-password").set(auth).send({ currentPassword: PASSWORD, newPassword: "Mat-Khau-Moi-456" });
+    expect(change.status).toBe(200);
+    const relog = await api().post("/api/auth/login").send({ email: user.email, password: "Mat-Khau-Moi-456" });
+    expect(relog.body.data.user.mustChangePassword).toBe(false);
+    expect((await api().get("/api/students").set({ Authorization: `Bearer ${relog.body.data.accessToken}` })).status).toBe(200);
+  });
 });

@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { prisma } from "../core/db/prisma";
-import { forbidden, unauthorized } from "../core/http/errors";
+import { forbidden, HttpError, unauthorized } from "../core/http/errors";
 import type { AuthContext } from "./auth.types";
 import type { Permission } from "../contract/permissions";
 import { verifyAccessToken } from "./tokens";
@@ -26,6 +26,7 @@ async function loadContext(token: string, ip: string | undefined): Promise<AuthC
     roleId: user.roleId,
     roleName: user.role.name,
     branchId: user.branchId,
+    mustChangePassword: user.mustChangePassword,
     permissions: new Set(user.role.permissions.map((rp) => rp.permission.code)),
     ip,
   };
@@ -34,18 +35,24 @@ async function loadContext(token: string, ip: string | undefined): Promise<AuthC
 const bearer = (req: Request) => (req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : null);
 
 /** Bắt buộc đăng nhập: gắn `req.auth` (user + role + quyền đọc từ DB mỗi request, không tin claim trong token). */
-export async function authenticate(req: Request, _res: Response, next: NextFunction) {
+export const authenticate = (req: Request, res: Response, next: NextFunction) => authenticateWith(false)(req, res, next);
+
+/** Như `authenticate` nhưng cho phép tài khoản đang dùng mật khẩu tạm (chỉ dùng cho /auth/me, /auth/change-password). */
+export const authenticateAllowTemp = (req: Request, res: Response, next: NextFunction) => authenticateWith(true)(req, res, next);
+
+const authenticateWith = (allowTemp: boolean) => async (req: Request, _res: Response, next: NextFunction) => {
   try {
     const token = bearer(req);
     if (!token) throw unauthorized();
     const ctx = await loadContext(token, clientIp(req));
     if (!ctx) throw unauthorized();
+    if (ctx.mustChangePassword && !allowTemp) throw new HttpError(403, "FORBIDDEN", "Bạn cần đổi mật khẩu tạm trước khi tiếp tục", [{ field: "password", message: "PASSWORD_CHANGE_REQUIRED" }]);
     req.auth = ctx;
     next();
   } catch (error) {
     next(error);
   }
-}
+};
 
 /** Kiểm tra quyền `resource.action` độc lập với FE (FE chỉ ẩn nút). Dùng sau `authenticate`. */
 export const requirePermission =

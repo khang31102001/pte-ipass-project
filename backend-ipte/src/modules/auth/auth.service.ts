@@ -17,7 +17,7 @@ export const loginSchema = z.object({
 export const changePasswordSchema = z.object({ currentPassword: z.string().min(1, "Nhập mật khẩu hiện tại"), newPassword: z.string().min(1, "Nhập mật khẩu mới") });
 
 export interface SessionPayload {
-  user: { id: string; name: string; email: string; avatarUrl: string | null };
+  user: { id: string; name: string; email: string; avatarUrl: string | null; mustChangePassword: boolean };
   role: { id: string; name: string };
   permissions: string[];
 }
@@ -39,7 +39,7 @@ const userWithRole = { include: { role: { include: { permissions: { include: { p
 export async function toSession(userId: string): Promise<SessionPayload> {
   const u = await prisma.user.findUniqueOrThrow({ where: { id: userId }, ...userWithRole });
   return {
-    user: { id: u.id, name: u.fullName, email: u.email, avatarUrl: u.avatarUrl },
+    user: { id: u.id, name: u.fullName, email: u.email, avatarUrl: u.avatarUrl, mustChangePassword: u.mustChangePassword },
     role: { id: u.role.id, name: u.role.name },
     permissions: u.role.permissions.map((p) => p.permission.code).sort(),
   };
@@ -133,7 +133,7 @@ export async function changePassword(auth: AuthContext, input: z.infer<typeof ch
   const passwordHash = await hashPassword(input.newPassword);
   await prisma.$transaction(async (tx) => {
     // Tăng tokenVersion ⇒ mọi access token cũ mất hiệu lực; thu hồi mọi refresh token.
-    await tx.user.update({ where: { id: user.id }, data: { passwordHash, tokenVersion: { increment: 1 } } });
+    await tx.user.update({ where: { id: user.id }, data: { passwordHash, mustChangePassword: false, tokenVersion: { increment: 1 } } });
     await tx.refreshToken.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
     await writeAudit(auth, { action: "update", resource: "user", entityId: user.id, entityLabel: `${user.email} (đổi mật khẩu)` }, tx);
   });
