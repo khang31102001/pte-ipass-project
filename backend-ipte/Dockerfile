@@ -1,33 +1,24 @@
 # syntax=docker/dockerfile:1
 ARG NODE_VERSION=22.17.0
 
-# Single environment for build + runtime
-FROM node:${NODE_VERSION}-bookworm-slim
-
-# App directory and runtime config
+FROM node:${NODE_VERSION}-bookworm-slim AS build
 WORKDIR /usr/src/app
-ENV PORT=4000
-
-# System packages needed for node-gyp/Prisma
-RUN apt-get update && apt-get install -y --no-install-recommends \
-  openssl ca-certificates python3 make g++ \
-  && rm -rf /var/lib/apt/lists/*
-
-# Install JS dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
-
-# Copy sources and build, then prune dev deps
 COPY . .
-RUN npm run prisma:generate \
-  && npm run build \
-  && npm prune --omit=dev \
-  && rm -rf ~/.npm /tmp/*
+RUN npm run db:generate && npm run build && npm prune --omit=dev
 
-# Drop privileges for runtime
-ENV NODE_ENV=production
-RUN useradd -m nodeuser && chown -R nodeuser:nodeuser /usr/src/app
+FROM node:${NODE_VERSION}-bookworm-slim
+WORKDIR /usr/src/app
+ENV NODE_ENV=production PORT=4000
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=build /usr/src/app/node_modules ./node_modules
+COPY --from=build /usr/src/app/dist ./dist
+COPY --from=build /usr/src/app/prisma ./prisma
+COPY --from=build /usr/src/app/package.json ./package.json
+RUN useradd -m nodeuser && mkdir -p storage && chown -R nodeuser:nodeuser /usr/src/app
 USER nodeuser
-
 EXPOSE 4000
-CMD ["node", "dist/server.js"]
+# Áp dụng migration (idempotent) rồi chạy server. Bí mật/DB URL chỉ qua biến môi trường.
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
