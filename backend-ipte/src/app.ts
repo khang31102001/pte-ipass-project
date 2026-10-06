@@ -1,70 +1,41 @@
-﻿import express, { Express } from "express";
+import cookieParser from "cookie-parser";
 import cors from "cors";
-import path from "path";
+import express, { type Express } from "express";
+import { resolve } from "node:path";
+import helmet from "helmet";
+import pinoHttp from "pino-http";
+import { env } from "./config/env";
+import { errorHandler, notFoundHandler } from "./core/http/error-handler";
+import { logger } from "./core/logger";
+import { apiRouter } from "./routes";
 
-import { config } from "@config/index";
-import { setupSwagger } from "@config/swagger";
-import errorHandler from "@middlewares/errorHandler";
+export function createApp(): Express {
+  const app = express();
+  if (env.TRUST_PROXY === "true") app.set("trust proxy", 1);
+  app.disable("x-powered-by");
 
-import userRoutes from "@routes/user.routes";
-import authRoutes from "@routes/auth.routes";
-import aboutRoutes from "@routes/about.routes";
-import branchRoutes from "@routes/branch.routes";
-import socialRoutes from "@routes/social.routes";
-import courseRoutes from "@routes/course.routes";
-import teacherRoutes from "@routes/teacher.routes";
-import studentRoutes from "@routes/student.routes";
-import newsRoutes from "@routes/news.routes";
-import bannerRoutes from "@routes/banner.routes";
-import consultationRoutes from "@routes/consultation.routes";
-import documentRoutes from "@routes/document.routes";
-import categoryRoutes from "@routes/category.routes";
-import geminiRoutes from "@routes/gemini.routers";
-import commentRoutes from "@routes/comment.router";
-import mediaRoutes from "@routes/media.routes";
-import mailRoutes from "@routes/mail.routes";
-
-const app: Express = express();
-
-const allowedOrigins = config.CORS_ALLOWED_ORIGINS;
-
-app.use(
+  app.use(helmet());
+  app.use(
     cors({
-        origin: allowedOrigins,
-        credentials: true, // allow sending refresh token cookies
-    })
-);
-app.use(express.json({ limit: "20mb" }));
+      origin: env.CORS_ALLOWED_ORIGINS,
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+    }),
+  );
+  app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === "/health" } }));
+  app.use(express.json({ limit: "2mb" }));
+  app.use(cookieParser());
 
-// Serve static files from storage directory
-app.use("/storage", express.static(path.join(process.cwd(), "storage")));
+  // Tệp tải lên / ảnh đã tách khi migrate: chỉ phục vụ tệp tĩnh, không liệt kê thư mục, cho phép website khác origin hiển thị ảnh.
+  app.use("/storage", (_req, res, next) => { res.setHeader("Cross-Origin-Resource-Policy", "cross-origin"); next(); }, express.static(resolve(env.UPLOAD_DIR), { index: false, dotfiles: "deny", maxAge: "7d" }));
 
-app.use("/api/users", userRoutes);
-app.use("/api/auth", authRoutes);
-app.use("/api/courses", courseRoutes);
-app.use("/api/abouts", aboutRoutes);
-app.use("/api/branches", branchRoutes);
-app.use("/api/socials", socialRoutes);
-app.use("/api/teachers", teacherRoutes);
-app.use("/api/students", studentRoutes);
-app.use("/api/news", newsRoutes);
-app.use("/api/banners", bannerRoutes);
-app.use("/api/consultations", consultationRoutes);
-app.use("/api/documents", documentRoutes);
-app.use("/api/categories", categoryRoutes);
-app.use("/api/gemini", geminiRoutes);
-app.use("/api/comments", commentRoutes);
-app.use("/api/media", mediaRoutes);
-app.use("/api/consultations", consultationRoutes);
-app.use("/api/mail", mailRoutes);
-app.use(errorHandler);
+  app.get("/health", (_req, res) => {
+    res.json({ status: "ok" });
+  });
+  app.use("/api", apiRouter);
 
-app.get("/", (_req, res) => {
-    res.send("Welcome to the IPTE Backend API");
-});
-(BigInt.prototype as any).toJSON = function () {
-    return Number(this);
-};
-setupSwagger(app);
-
-export default app;
+  app.use(notFoundHandler);
+  app.use(errorHandler);
+  return app;
+}

@@ -1,6 +1,11 @@
+// PTE iPASS — schema v2 (PostgreSQL).
+// Nguyên tắc: một bảng cho mỗi thực thể nghiệp vụ; PK uuid; created_at/updated_at; ràng buộc FK rõ ràng;
+// giá trị lồng (form fields, sections, availability…) lưu JSONB vì thuộc sở hữu bản ghi cha.
+// Bảng legacy nằm ở database cũ (ipte) và KHÔNG bị chạm tới; xem docs/migration.md.
+
 generator client {
   provider      = "prisma-client-js"
-  binaryTargets = ["native", "linux-musl", "linux-musl-openssl-3.0.x"]
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -8,475 +13,910 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model comment {
-  comment_id        Int       @id @default(autoincrement())
-  user_id           Int?
-  course_id         Int?
-  news_id           Int?
-  knowledge_id      Int?
-  parent_comment_id Int?
-  content           String
-  is_approved       Boolean?  @default(true)
-  created_at        DateTime? @default(now()) @db.Timestamp(6)
-  updated_at        DateTime? @default(now()) @db.Timestamp(6)
-  created_by        String?   @db.VarChar(50)
-  updated_by        String?   @db.VarChar(50)
-  version           Int?      @default(1)
-  rating            Int?
-  likes             Int?      @default(0)
-  user_name         String?   @db.VarChar(100)
-  user_avatar       String?   @db.VarChar(255)
-  course            course?   @relation(fields: [course_id], references: [course_id], onDelete: Cascade, onUpdate: NoAction)
-  comment           comment?  @relation("commentTocomment", fields: [parent_comment_id], references: [comment_id], onDelete: Cascade, onUpdate: NoAction)
-  other_comment     comment[] @relation("commentTocomment")
-  user              user?     @relation(fields: [user_id], references: [user_id], onUpdate: NoAction)
-
-  @@index([course_id], map: "idx_comment_course")
-  @@index([knowledge_id], map: "idx_comment_knowledge")
-  @@index([news_id], map: "idx_comment_news")
-  @@index([parent_comment_id], map: "idx_comment_parent")
+// ── Enums ───────────────────────────────────────────────────────────────────
+enum ContentStatus {
+  draft
+  review
+  published
+  archived
 }
 
-model course {
-  course_id        Int              @id @default(autoincrement())
-  course_code      String?          @unique @db.VarChar(50)
-  course_name      String           @db.VarChar(255)
-  slug             String?          @unique @db.VarChar(255)
-  title            String?
-  description      String?
-  level            course_level     @default(BEGINNER)
-  mode             course_mode      @default(ONLINE)
-  language         String?          @default("en") @db.VarChar(50)
-  price            Decimal?         @default(0) @db.Decimal(12, 2)
-  duration         String?          @db.VarChar(255)
-  start_date       DateTime?        @db.Date
-  end_date         DateTime?        @db.Date
-  image            String?
-  created_at       DateTime?        @default(now()) @db.Timestamp(6)
-  updated_at       DateTime?        @default(now()) @db.Timestamp(6)
-  created_by       String?          @db.VarChar(50)
-  updated_by       String?          @db.VarChar(50)
-  version          Int?             @default(1)
-  category         course_category?
-  schedule         String?          @db.VarChar(255)
-  tuition          String?          @db.VarChar(255)
-  content          String?
-  category_id      Int?
-  is_featured      Boolean?         @default(false)
-  is_disabled      Boolean?         @default(false)
-  meta_title       String?
-  meta_description String?
-  audience         String[]         @default([])
-  keywords         String[]         @default([])
-  schema_enabled   Boolean?         @default(false)
-  schema_mode      String?          @db.VarChar(50)
-  schema_data      String?
-  benefits         String?
-  seo_score        Int?
-  delete_image_url String?
-  category_type    String?          @db.VarChar(255)
-  comment          comment[]
-
-  @@index([level], map: "idx_course_level")
-  @@index([mode], map: "idx_course_mode")
-  @@index([slug], map: "idx_course_slug")
+enum ActiveStatus {
+  active
+  inactive
 }
 
-model news {
-  news_id          Int            @id @default(autoincrement())
-  author_id        Int?
-  category_id      Int?
-  image            String?
-  title            String         @db.VarChar(255)
-  slug             String         @unique @db.VarChar(255)
-  description      String?
-  content          String
-  status           publish_status @default(DRAFT)
-  published_at     DateTime?      @db.Timestamp(6)
-  tags             String[]       @default([])
-  keywords         String[]       @default([])
-  created_at       DateTime?      @default(now()) @db.Timestamp(6)
-  updated_at       DateTime?      @default(now()) @db.Timestamp(6)
-  created_by       String?        @db.VarChar(50)
-  updated_by       String?        @db.VarChar(50)
-  version          Int?           @default(1)
-  is_prominent     Boolean?       @default(false)
-  category_type    String?        @db.VarChar(255)
-  is_featured      Boolean?       @default(false)
-  is_disabled      Boolean?       @default(false)
-  meta_title       String?
-  meta_description String?
-  audience         String[]       @default([])
-  schema_enabled   Boolean?       @default(false)
-  schema_mode      String?        @db.VarChar(50)
-  schema_data      String?
-  seo_score        Int?
-  start_date       DateTime?      @db.Date
-  end_date         DateTime?      @db.Date
-  delete_image_url String?
-  user             user?          @relation(fields: [author_id], references: [user_id], onUpdate: NoAction)
+enum UserStatus {
+  active
+  inactive
+  locked
 }
 
-model permission {
-  permission_id          Int               @id @default(autoincrement())
-  permission_name        String            @unique @db.VarChar(50)
-  permission_description String?
-  created_at             DateTime?         @default(now()) @db.Timestamp(6)
-  updated_at             DateTime?         @default(now()) @db.Timestamp(6)
-  created_by             String?           @db.VarChar(50)
-  updated_by             String?           @db.VarChar(50)
-  version                Int?              @default(1)
-  role_permission        role_permission[]
+enum Gender {
+  female
+  male
+  other
 }
 
-model refresh_token {
-  id              Int       @id @default(autoincrement())
-  user_id         Int
-  jti             String    @db.VarChar(100)
-  token_hash      String    @db.VarChar(255)
-  session_id      String    @db.Uuid
-  device_name     String?   @db.VarChar(100)
-  user_agent      String?
-  ip              String?   @db.VarChar(45)
-  expires_at      DateTime  @db.Timestamp(6)
-  last_used_at    DateTime? @default(now()) @db.Timestamp(6)
-  revoked_at      DateTime? @db.Timestamp(6)
-  replaced_by_jti String?   @db.VarChar(100)
-  created_at      DateTime? @default(now()) @db.Timestamp(6)
-  updated_at      DateTime? @default(now()) @db.Timestamp(6)
-  created_by      String?   @db.VarChar(50)
-  updated_by      String?   @db.VarChar(50)
-  version         Int?      @default(1)
+enum StudentStatus {
+  active
+  paused
+  closed
 }
 
-model role {
-  role_id          Int               @id @default(autoincrement())
-  role_name        String            @unique @db.VarChar(50)
-  role_description String?
-  created_at       DateTime?         @default(now()) @db.Timestamp(6)
-  updated_at       DateTime?         @default(now()) @db.Timestamp(6)
-  created_by       String?           @db.VarChar(50)
-  updated_by       String?           @db.VarChar(50)
-  version          Int?              @default(1)
-  role_permission  role_permission[]
-  user_role        user_role[]
+enum LeadSource {
+  facebook
+  google
+  tiktok
+  zalo
+  referral
+  website
+  offline
+  other
 }
 
-model role_permission {
-  role_id       Int
-  permission_id Int
-  created_at    DateTime?  @default(now()) @db.Timestamp(6)
-  updated_at    DateTime?  @default(now()) @db.Timestamp(6)
-  created_by    String?    @db.VarChar(50)
-  updated_by    String?    @db.VarChar(50)
-  version       Int?       @default(1)
-  permission    permission @relation(fields: [permission_id], references: [permission_id], onDelete: Cascade, onUpdate: NoAction)
-  role          role       @relation(fields: [role_id], references: [role_id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@id([role_id, permission_id])
+enum JourneyStage {
+  lead
+  test
+  enroll
+  learn
+  mock
+  exam
+  result
 }
 
-model student {
-  student_id Int       @id @default(autoincrement())
-  user_id    Int?      @unique
-  phone      String?   @db.VarChar(30)
-  dob        DateTime? @db.Date
-  address    String?
-  note       String?
-  created_at DateTime? @default(now()) @db.Timestamp(6)
-  updated_at DateTime? @default(now()) @db.Timestamp(6)
-  created_by String?   @db.VarChar(50)
-  updated_by String?   @db.VarChar(50)
-  version    Int?      @default(1)
-  full_name  String    @db.VarChar(255)
-  course_id  Int?
-  slug       String    @db.VarChar(255)
-  user       user?     @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+enum JourneyEventKind {
+  stage
+  note
 }
 
-model tag {
-  tag_id      Int       @id @default(autoincrement())
-  name        String    @unique @db.VarChar(100)
-  description String?
-  slug        String    @unique @db.VarChar(150)
-  created_at  DateTime? @default(now()) @db.Timestamp(6)
-  updated_at  DateTime? @default(now()) @db.Timestamp(6)
-  created_by  String?   @db.VarChar(50)
-  updated_by  String?   @db.VarChar(50)
-  version     Int?      @default(1)
+enum LearningPurpose {
+  study_abroad
+  migration
+  work
+  scholarship
+  other
 }
 
-model teacher {
-  teacher_id       Int       @id @default(autoincrement())
-  user_id          Int?
-  bio              String?
-  name             String    @db.VarChar(100)
-  image            String?   @db.VarChar(255)
-  overall_score    Decimal?  @default(0) @db.Decimal(3, 2)
-  listening_score  Decimal?  @default(0) @db.Decimal(3, 2)
-  speaking_score   Decimal?  @default(0) @db.Decimal(3, 2)
-  reading_score    Decimal?  @default(0) @db.Decimal(3, 2)
-  writing_score    Decimal?  @default(0) @db.Decimal(3, 2)
-  created_at       DateTime? @default(now()) @db.Timestamp(6)
-  updated_at       DateTime? @default(now()) @db.Timestamp(6)
-  created_by       String?   @db.VarChar(50)
-  updated_by       String?   @db.VarChar(50)
-  version          Int?      @default(1)
-  slug             String    @default("") @db.VarChar(255)
-  content          String?
-  delete_image_url String?
-  seo_score        Int?
-}
-
-model user {
-  user_id    Int         @id @default(autoincrement())
-  username   String      @unique @db.VarChar(50)
-  password   String      @db.VarChar(255)
-  email      String      @unique @db.VarChar(100)
-  full_name  String?     @db.VarChar(100)
-  created_at DateTime?   @default(now()) @db.Timestamp(6)
-  updated_at DateTime?   @default(now()) @db.Timestamp(6)
-  created_by String?     @db.VarChar(50)
-  updated_by String?     @db.VarChar(50)
-  version    Int?        @default(1)
-  avatar     String?     @db.VarChar(50)
-  is_active  Boolean?    @default(true)
-  bio        String?
-  slug       String?     @db.VarChar(50)
-  address    String?
-  comment    comment[]
-  news       news[]
-  student    student?
-  user_role  user_role[]
-}
-
-model user_role {
-  user_id    Int
-  role_id    Int
-  created_at DateTime? @default(now()) @db.Timestamp(6)
-  updated_at DateTime? @default(now()) @db.Timestamp(6)
-  created_by String?   @db.VarChar(50)
-  updated_by String?   @db.VarChar(50)
-  version    Int?      @default(1)
-  role       role      @relation(fields: [role_id], references: [role_id], onDelete: Cascade, onUpdate: NoAction)
-  user       user      @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@id([user_id, role_id])
-}
-
-model category {
-  category_id        Int       @id @default(autoincrement())
-  icon               String?
-  name               String    @db.VarChar(200)
-  slug               String    @db.VarChar(200)
-  description        String?
-  parent_id          BigInt?
-  category_type      String    @db.VarChar(50)
-  meta_title         String?   @db.VarChar(255)
-  meta_description   String?
-  h1_heading         String?   @db.VarChar(255)
-  seo_content_top    String?
-  seo_content_bottom String?
-  canonical_url      String?
-  noindex            Boolean?  @default(false)
-  url                String?
-  level              Int?
-  is_featured        Boolean?  @default(false)
-  is_disable         Boolean?  @default(false)
-  created_at         DateTime? @default(now()) @db.Timestamp(6)
-  updated_at         DateTime? @default(now()) @db.Timestamp(6)
-  created_by         String?   @db.VarChar(50)
-  updated_by         String?   @db.VarChar(50)
-  version            Int?      @default(1)
-  banner             banner[]
-}
-
-model media {
-  media_id         Int       @id @default(autoincrement())
-  title            String?
-  description      String?
-  image_name       String?   @db.VarChar(255)
-  delete_image_url String?
-  image_url        String?
-  video_url        String?
-  is_disabled      Boolean?  @default(false)
-  media_type       String?   @db.VarChar(255)
-  created_at       DateTime? @default(now()) @db.Timestamp(6)
-  updated_at       DateTime? @default(now()) @db.Timestamp(6)
-  created_by       String?   @db.VarChar(50)
-  updated_by       String?   @db.VarChar(50)
-  version          Int?      @default(1)
-  category_id      Int?
-  category_type    String?   @db.VarChar(255)
-  href             String?   @db.VarChar(255)
-}
-
-model consultation {
-  consultation_id Int       @id @default(autoincrement())
-  name            String    @db.VarChar(255)
-  email           String    @db.VarChar(255)
-  phone           String?   @db.VarChar(30)
-  course_id       Int?
-  message         String?
-  status          String    @default("NEW") @db.VarChar(50)
-  created_at      DateTime? @default(now()) @db.Timestamp(6)
-  updated_at      DateTime? @default(now()) @db.Timestamp(6)
-  created_by      String?   @db.VarChar(50)
-  updated_by      String?   @db.VarChar(50)
-  version         Int?      @default(1)
-  target_score    String?   @db.VarChar(255)
-}
-
-model deleted_image {
-  deleted_image_id Int    @id @default(autoincrement())
-  delete_image_url String
-}
-
-model banner {
-  banner_id          Int       @id @default(autoincrement())
-  title              String    @db.VarChar(255)
-  sub_title          String    @db.VarChar(255)
-  placement          String    @db.VarChar(255)
-  image              String?
-  delete_image_url   String?
-  action_type        String    @db.VarChar(255)
-  action_label       String    @db.VarChar(255)
-  is_active          Boolean?  @default(true)
-  order              Int?
-  start_date         DateTime? @db.Date
-  end_date           DateTime? @db.Date
-  created_at         DateTime? @default(now()) @db.Timestamp(6)
-  updated_at         DateTime? @default(now()) @db.Timestamp(6)
-  created_by         String?   @db.VarChar(50)
-  updated_by         String?   @db.VarChar(50)
-  version            Int?      @default(1)
-  action_url         String?   @db.VarChar(255)
-  category_id        Int
-  icon               String?   @db.VarChar(50)
-  name               String?   @db.VarChar(64)
-  slug               String?   @db.VarChar(50)
-  description        String?   @db.VarChar(512)
-  parent_id          Int?
-  category_type      String?   @db.VarChar(50)
-  meta_title         String?   @db.VarChar(50)
-  meta_description   String?   @db.VarChar(50)
-  h1_heading         String?   @db.VarChar(50)
-  seo_content_top    String?   @db.VarChar(50)
-  seo_content_bottom String?   @db.VarChar(50)
-  canonical_url      String?   @db.VarChar(50)
-  noindex            Boolean?
-  url                String?   @db.VarChar(50)
-  level              Int?
-  is_featured        Boolean?
-  is_disable         Boolean?
-  category           category  @relation(fields: [category_id], references: [category_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_banner_category")
-}
-
-model information {
-  information_id   Int       @id(map: "ainformation_pkey") @default(autoincrement())
-  title            String?   @db.VarChar(255)
-  description      String?
-  mission          String?
-  vision           String?
-  email            String?   @db.VarChar(255)
-  phone            String?   @db.VarChar(50)
-  hotline          String?   @db.VarChar(50)
-  address          String?
-  social_url       String?   @db.VarChar(255)
-  category_type    String?   @db.VarChar(255)
-  map_url          String?
-  slug             String?   @db.VarChar(255)
-  image            String?
-  delete_image_url String?
-  category_id      Int?
-  created_at       DateTime? @default(now()) @db.Timestamp(6)
-  updated_at       DateTime? @default(now()) @db.Timestamp(6)
-  created_by       String?   @db.VarChar(50)
-  updated_by       String?   @db.VarChar(50)
-  version          Int?      @default(1)
-  video            String?   @db.VarChar
-  content          String?
-}
-
-model document {
-  document_id      Int       @id @default(autoincrement())
-  author_id        Int?
-  category_id      Int?
-  image            String?
-  title            String    @db.VarChar(255)
-  slug             String    @unique @db.VarChar(255)
-  description      String?
-  content          String
-  status           String?   @db.VarChar(50)
-  published_at     DateTime? @db.Timestamp(6)
-  tags             String[]  @default([])
-  keywords         String[]  @default([])
-  is_prominent     Boolean?  @default(false)
-  category_type    String?   @db.VarChar(255)
-  is_featured      Boolean?  @default(false)
-  is_disabled      Boolean?  @default(false)
-  meta_title       String?
-  meta_description String?
-  audience         String[]  @default([])
-  schema_enabled   Boolean?  @default(false)
-  schema_mode      String?   @db.VarChar(50)
-  schema_data      String?
-  seo_score        Int?
-  start_date       DateTime? @db.Date
-  end_date         DateTime? @db.Date
-  delete_image_url String?
-  created_at       DateTime? @default(now()) @db.Timestamp(6)
-  updated_at       DateTime? @default(now()) @db.Timestamp(6)
-  created_by       String?   @db.VarChar(50)
-  updated_by       String?   @db.VarChar(50)
-  version          Int?      @default(1)
-}
-
-enum contact_method {
-  PHONE
-  EMAIL
-  ZALO
-  MESSENGER
-  WHATSAPP
+enum TargetCountry {
+  AU
+  NZ
+  CA
+  UK
+  US
+  VN
   OTHER
 }
 
-enum course_category {
-  BASIS
-  ADVANCE
-  IPASS
+enum StudyMode {
+  online
+  offline
+  hybrid
 }
 
-enum course_level {
-  BEGINNER
-  INTERMEDIATE
-  ADVANCED
+enum PteSkill {
+  speaking
+  writing
+  reading
+  listening
 }
 
-enum course_mode {
-  ONLINE
-  OFFLINE
-  HYBRID
+enum CourseType {
+  preparation
+  target_score
+  intensive
+  core
+  one_on_one
+  pronunciation
 }
 
-enum enrollment_status {
-  INTERESTED
-  REGISTERED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
+enum CourseStatus {
+  draft
+  published
+  archived
 }
 
-enum payment_status {
-  UNPAID
-  PAID
-  PARTIAL
-  REFUNDED
+enum LessonType {
+  video
+  live
+  practice
+  mock_test
+  webinar
 }
 
-enum publish_status {
-  DRAFT
-  PUBLISHED
-  ARCHIVED
+enum LessonStatus {
+  draft
+  published
+}
+
+enum PathStatus {
+  draft
+  active
+  paused
+  completed
+}
+
+enum StepStatus {
+  pending
+  in_progress
+  done
+}
+
+enum MaterialType {
+  video
+  pdf
+  document
+  link
+  worksheet
+}
+
+enum MaterialVisibility {
+  public
+  enrolled
+  staff
+}
+
+enum MaterialStatus {
+  draft
+  published
+}
+
+enum Difficulty {
+  easy
+  medium
+  hard
+}
+
+enum QuestionStatus {
+  draft
+  published
+  archived
+}
+
+enum TeacherStatus {
+  active
+  on_leave
+  inactive
+}
+
+enum BranchCountry {
+  VN
+  AU
+}
+
+enum RoomType {
+  classroom
+  lab
+  meeting
+  online
+}
+
+enum RoomStatus {
+  available
+  maintenance
+}
+
+enum PageTemplate {
+  landing
+  static
+}
+
+enum FormType {
+  trial_registration
+  consultation
+  placement_booking
+  contact
+  other
+}
+
+enum SubmissionStatus {
+  new
+  contacted
+  qualified
+  converted
+  spam
+}
+
+enum BannerPlacement {
+  home_hero
+  home_secondary
+  courses
+  news
+  popup
+}
+
+enum BannerStatus {
+  draft
+  active
+  inactive
+}
+
+enum MediaKind {
+  image
+  video
+  audio
+  document
+}
+
+enum NotificationChannel {
+  email
+  sms
+  zalo
+}
+
+enum AuditAction {
+  create
+  update
+  delete
+  login
+  approve
+  export
+}
+
+// ── IAM ─────────────────────────────────────────────────────────────────────
+model Role {
+  id          String           @id @default(uuid()) @db.Uuid
+  name        String           @unique @db.VarChar(80)
+  description String?
+  isSystem    Boolean          @default(false) @map("is_system")
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  permissions RolePermission[]
+  users       User[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id       String           @id @default(uuid()) @db.Uuid
+  /// "resource.action", ví dụ student.view
+  code     String           @unique @db.VarChar(80)
+  resource String           @db.VarChar(60)
+  action   String           @db.VarChar(30)
+  roles    RolePermission[]
+
+  @@index([resource])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String     @map("role_id") @db.Uuid
+  permissionId String     @map("permission_id") @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model User {
+  id             String         @id @default(uuid()) @db.Uuid
+  email          String         @unique @db.VarChar(160)
+  passwordHash   String         @map("password_hash")
+  fullName       String         @map("full_name") @db.VarChar(120)
+  phone          String?        @db.VarChar(30)
+  roleId         String         @map("role_id") @db.Uuid
+  branchId       String?        @map("branch_id") @db.Uuid
+  status         UserStatus     @default(active)
+  avatarUrl      String?        @map("avatar_url")
+  lastLoginAt    DateTime?      @map("last_login_at") @db.Timestamptz(6)
+  failedAttempts Int            @default(0) @map("failed_attempts")
+  /// Mật khẩu tạm do quản trị cấp: bắt buộc đổi ở lần đăng nhập kế tiếp.
+  mustChangePassword Boolean    @default(false) @map("must_change_password")
+  lockedUntil    DateTime?      @map("locked_until") @db.Timestamptz(6)
+  /// Tăng khi đổi mật khẩu / thu hồi phiên: vô hiệu hóa mọi access token cũ.
+  tokenVersion   Int            @default(0) @map("token_version")
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  role           Role           @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  branch         Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  refreshTokens  RefreshToken[]
+  assignedStudents Student[]
+  assignedSubmissions FormSubmission[]
+  articles       Article[]
+
+  @@index([roleId])
+  @@index([status])
+  @@map("users")
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  /// Mọi token sinh ra từ một lần đăng nhập chung một family: phát hiện tái sử dụng ⇒ thu hồi cả family.
+  familyId   String    @map("family_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.VarChar(128)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+  replacedBy String?   @map("replaced_by") @db.Uuid
+  ip         String?   @db.VarChar(64)
+  userAgent  String?   @map("user_agent")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+model AuditLog {
+  id          String      @id @default(uuid()) @db.Uuid
+  actorId     String?     @map("actor_id") @db.Uuid
+  actorName   String      @map("actor_name") @db.VarChar(120)
+  actorRole   String      @map("actor_role") @db.VarChar(80)
+  action      AuditAction
+  resource    String      @db.VarChar(60)
+  entityId    String      @map("entity_id") @db.VarChar(80)
+  entityLabel String      @map("entity_label")
+  before      Json?
+  after       Json?
+  ip          String?     @db.VarChar(64)
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([resource, createdAt(sort: Desc)])
+  @@index([actorId])
+  @@map("audit_logs")
+}
+
+// ── Tổ chức ─────────────────────────────────────────────────────────────────
+model Branch {
+  id           String        @id @default(uuid()) @db.Uuid
+  code         String        @unique @db.VarChar(30)
+  name         String        @db.VarChar(160)
+  country      BranchCountry
+  city         String        @db.VarChar(100)
+  address      String
+  phone        String        @db.VarChar(30)
+  email        String?       @db.VarChar(160)
+  managerName  String?       @map("manager_name") @db.VarChar(120)
+  openingHours String?       @map("opening_hours") @db.VarChar(120)
+  mapUrl       String?       @map("map_url")
+  status       ActiveStatus  @default(active)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  rooms        Room[]
+  teachers     Teacher[]
+  students     Student[]
+  users        User[]
+
+  @@map("branches")
+}
+
+model Room {
+  id        String     @id @default(uuid()) @db.Uuid
+  branchId  String     @map("branch_id") @db.Uuid
+  name      String     @db.VarChar(100)
+  capacity  Int
+  type      RoomType
+  status    RoomStatus @default(available)
+  equipment String[]   @default([])
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  branch    Branch     @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  @@unique([branchId, name])
+  @@map("rooms")
+}
+
+model Teacher {
+  id             String        @id @default(uuid()) @db.Uuid
+  code           String        @unique @db.VarChar(30)
+  slug           String        @unique @db.VarChar(160)
+  fullName       String        @map("full_name") @db.VarChar(120)
+  email          String        @unique @db.VarChar(160)
+  phone          String?       @db.VarChar(30)
+  avatarUrl      String?       @map("avatar_url")
+  headline       String?       @db.VarChar(160)
+  bio            String?
+  pteScore       Int?          @map("pte_score")
+  yearsExperience Int          @default(0) @map("years_experience")
+  specialties    PteSkill[]    @default([])
+  qualifications String[]      @default([])
+  branchId       String?       @map("branch_id") @db.Uuid
+  status         TeacherStatus @default(active)
+  availability   Json          @default("[]")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  branch         Branch?       @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  courses        CourseTeacher[]
+
+  @@index([status])
+  @@map("teachers")
+}
+
+// ── Khóa học ────────────────────────────────────────────────────────────────
+model CourseCategory {
+  id          String           @id @default(uuid()) @db.Uuid
+  name        String           @db.VarChar(160)
+  slug        String           @unique @db.VarChar(160)
+  description String?
+  parentId    String?          @map("parent_id") @db.Uuid
+  sortOrder   Int              @default(0) @map("sort_order")
+  isActive    Boolean          @default(true) @map("is_active")
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  parent      CourseCategory?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children    CourseCategory[] @relation("CategoryTree")
+  courses     Course[]
+
+  @@map("course_categories")
+}
+
+model Course {
+  id              String         @id @default(uuid()) @db.Uuid
+  code            String         @unique @db.VarChar(40)
+  name            String         @db.VarChar(200)
+  slug            String         @unique @db.VarChar(200)
+  categoryId      String         @map("category_id") @db.Uuid
+  type            CourseType
+  targetScore     Int?           @map("target_score")
+  entryLevel      String         @default("none") @map("entry_level") @db.VarChar(10)
+  mode            StudyMode
+  durationWeeks   Int            @map("duration_weeks")
+  sessionsCount   Int            @map("sessions_count")
+  /// VND. 0 = liên hệ tư vấn.
+  tuition         Int            @default(0)
+  summary         String
+  description     String?
+  outcomes        String[]       @default([])
+  audience        String[]       @default([])
+  status          CourseStatus   @default(draft)
+  isFeatured      Boolean        @default(false) @map("is_featured")
+  thumbnailUrl    String?        @map("thumbnail_url")
+  metaTitle       String?        @map("meta_title")
+  metaDescription String?        @map("meta_description")
+  enrolledCount   Int            @default(0) @map("enrolled_count")
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  category        CourseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  teachers        CourseTeacher[]
+  lessons         Lesson[]
+  materials       LearningMaterial[]
+  pathSteps       LearningPathStep[]
+  testimonials    Testimonial[]
+
+  @@index([categoryId])
+  @@index([status, isFeatured])
+  @@map("courses")
+}
+
+model CourseTeacher {
+  courseId  String  @map("course_id") @db.Uuid
+  teacherId String  @map("teacher_id") @db.Uuid
+  course    Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  teacher   Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+
+  @@id([courseId, teacherId])
+  @@index([teacherId])
+  @@map("course_teachers")
+}
+
+model Lesson {
+  id              String       @id @default(uuid()) @db.Uuid
+  courseId        String       @map("course_id") @db.Uuid
+  title           String       @db.VarChar(200)
+  position        Int          @map("position")
+  type            LessonType
+  skill           PteSkill?
+  durationMinutes Int          @map("duration_minutes")
+  objectives      String?
+  status          LessonStatus @default(draft)
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  course          Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  materials       LearningMaterial[]
+
+  @@index([courseId, position])
+  @@map("lessons")
+}
+
+model LearningMaterial {
+  id              String             @id @default(uuid()) @db.Uuid
+  title           String             @db.VarChar(200)
+  type            MaterialType
+  url             String
+  description     String?
+  skill           PteSkill?
+  questionType    String?            @map("question_type") @db.VarChar(60)
+  courseId        String?            @map("course_id") @db.Uuid
+  lessonId        String?            @map("lesson_id") @db.Uuid
+  fileSizeKb      Int?               @map("file_size_kb")
+  durationSeconds Int?               @map("duration_seconds")
+  tags            String[]           @default([])
+  visibility      MaterialVisibility @default(enrolled)
+  status          MaterialStatus     @default(draft)
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  course          Course?            @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  lesson          Lesson?            @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+
+  @@index([courseId])
+  @@index([lessonId])
+  @@map("learning_materials")
+}
+
+// ── Học viên ────────────────────────────────────────────────────────────────
+model Student {
+  id         String        @id @default(uuid()) @db.Uuid
+  code       String        @unique @db.VarChar(30)
+  fullName   String        @map("full_name") @db.VarChar(120)
+  gender     Gender        @default(other)
+  dateOfBirth DateTime?    @map("date_of_birth") @db.Date
+  email      String        @db.VarChar(160)
+  phone      String        @db.VarChar(30)
+  zalo       String?       @db.VarChar(40)
+  city       String?       @db.VarChar(100)
+  address    String?
+  source     LeadSource    @default(website)
+  branchId   String?       @map("branch_id") @db.Uuid
+  assignedTo String?       @map("assigned_to") @db.Uuid
+  status     StudentStatus @default(active)
+  stage      JourneyStage  @default(lead)
+  tags       String[]      @default([])
+  notes      String?
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  branch     Branch?       @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  assignee   User?         @relation(fields: [assignedTo], references: [id], onDelete: SetNull)
+  profile    StudentProfile?
+  events     JourneyEvent[]
+  paths      LearningPath[]
+
+  @@unique([email])
+  @@index([stage])
+  @@index([status])
+  @@index([branchId])
+  @@index([assignedTo])
+  @@index([createdAt(sort: Desc)])
+  @@map("students")
+}
+
+model StudentProfile {
+  studentId          String          @id @map("student_id") @db.Uuid
+  currentLevel       String          @default("none") @map("current_level") @db.VarChar(10)
+  currentScore       Int?            @map("current_score")
+  skillScores        Json?           @map("skill_scores")
+  targetScore        Int             @map("target_score")
+  purpose            LearningPurpose
+  purposeDetail      String?         @map("purpose_detail")
+  targetCountry      TargetCountry?  @map("target_country")
+  examDeadline       DateTime?       @map("exam_deadline") @db.Date
+  studyHoursPerWeek  Int?            @map("study_hours_per_week")
+  preferredMode      StudyMode       @default(online) @map("preferred_mode")
+  preferredSchedule  String?         @map("preferred_schedule")
+  notes              String?
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  student            Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("student_profiles")
+}
+
+model JourneyEvent {
+  id            String           @id @default(uuid()) @db.Uuid
+  studentId     String           @map("student_id") @db.Uuid
+  kind          JourneyEventKind
+  stage         JourneyStage
+  title         String           @db.VarChar(200)
+  note          String?
+  data          Json?
+  createdByName String           @map("created_by_name") @db.VarChar(120)
+  occurredAt    DateTime         @map("occurred_at") @db.Timestamptz(6)
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  student       Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, occurredAt])
+  @@index([stage, occurredAt])
+  @@map("student_journey_events")
+}
+
+model LearningPath {
+  id           String             @id @default(uuid()) @db.Uuid
+  studentId    String             @map("student_id") @db.Uuid
+  title        String             @db.VarChar(200)
+  currentLevel String             @map("current_level") @db.VarChar(10)
+  targetScore  Int                @map("target_score")
+  deadline     DateTime?          @db.Date
+  startDate    DateTime           @map("start_date") @db.Date
+  weeklyHours  Int                @map("weekly_hours")
+  status       PathStatus         @default(draft)
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  student      Student            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  steps        LearningPathStep[]
+
+  @@index([studentId])
+  @@index([status])
+  @@map("learning_paths")
+}
+
+model LearningPathStep {
+  id          String       @id @default(uuid()) @db.Uuid
+  pathId      String       @map("path_id") @db.Uuid
+  position    Int
+  title       String       @db.VarChar(200)
+  courseId    String?      @map("course_id") @db.Uuid
+  targetScore Int?         @map("target_score")
+  startDate   DateTime     @map("start_date") @db.Date
+  endDate     DateTime     @map("end_date") @db.Date
+  status      StepStatus   @default(pending)
+  note        String?
+  path        LearningPath @relation(fields: [pathId], references: [id], onDelete: Cascade)
+  course      Course?      @relation(fields: [courseId], references: [id], onDelete: SetNull)
+
+  @@unique([pathId, position])
+  @@map("learning_path_steps")
+}
+
+model Question {
+  id            String         @id @default(uuid()) @db.Uuid
+  code          String         @unique @db.VarChar(40)
+  skill         PteSkill
+  type          String         @db.VarChar(60)
+  prompt        String
+  content       String?
+  mediaUrl      String?        @map("media_url")
+  options       Json           @default("[]")
+  answerKey     String?        @map("answer_key")
+  difficulty    Difficulty     @default(medium)
+  targetBand    Int?           @map("target_band")
+  tags          String[]       @default([])
+  status        QuestionStatus @default(draft)
+  createdByName String         @map("created_by_name") @db.VarChar(120)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([skill, type])
+  @@index([status])
+  @@map("questions")
+}
+
+// ── CMS & website ───────────────────────────────────────────────────────────
+model Page {
+  id              String        @id @default(uuid()) @db.Uuid
+  title           String        @db.VarChar(200)
+  slug            String        @unique @db.VarChar(200)
+  template        PageTemplate
+  status          ContentStatus @default(draft)
+  summary         String?
+  content         String?
+  sections        Json          @default("[]")
+  metaTitle       String?       @map("meta_title")
+  metaDescription String?       @map("meta_description")
+  canonicalUrl    String?       @map("canonical_url")
+  noindex         Boolean       @default(false)
+  publishedAt     DateTime?     @map("published_at") @db.Timestamptz(6)
+  updatedByName   String?       @map("updated_by_name") @db.VarChar(120)
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status])
+  @@map("pages")
+}
+
+model ArticleCategory {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String    @db.VarChar(160)
+  slug        String    @unique @db.VarChar(160)
+  description String?
+  sortOrder   Int       @default(0) @map("sort_order")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  articles    Article[]
+
+  @@map("article_categories")
+}
+
+model Tag {
+  id        String       @id @default(uuid()) @db.Uuid
+  name      String       @unique @db.VarChar(80)
+  slug      String       @unique @db.VarChar(100)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  articles  ArticleTag[]
+
+  @@map("tags")
+}
+
+model Article {
+  id              String          @id @default(uuid()) @db.Uuid
+  title           String          @db.VarChar(250)
+  slug            String          @unique @db.VarChar(250)
+  excerpt         String
+  content         String
+  coverUrl        String?         @map("cover_url")
+  categoryId      String          @map("category_id") @db.Uuid
+  authorId        String?         @map("author_id") @db.Uuid
+  isFeatured      Boolean         @default(false) @map("is_featured")
+  status          ContentStatus   @default(draft)
+  publishedAt     DateTime?       @map("published_at") @db.Timestamptz(6)
+  metaTitle       String?         @map("meta_title")
+  metaDescription String?         @map("meta_description")
+  readingMinutes  Int             @default(1) @map("reading_minutes")
+  viewCount       Int             @default(0) @map("view_count")
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  category        ArticleCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  author          User?           @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  tags            ArticleTag[]
+
+  @@index([categoryId])
+  @@index([status, publishedAt(sort: Desc)])
+  @@map("articles")
+}
+
+model ArticleTag {
+  articleId String  @map("article_id") @db.Uuid
+  tagId     String  @map("tag_id") @db.Uuid
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, tagId])
+  @@map("article_tags")
+}
+
+model Form {
+  id             String           @id @default(uuid()) @db.Uuid
+  name           String           @db.VarChar(160)
+  slug           String           @unique @db.VarChar(160)
+  type           FormType
+  description    String?
+  fields         Json             @default("[]")
+  submitLabel    String           @map("submit_label") @db.VarChar(80)
+  successMessage String           @map("success_message")
+  notifyEmails   String[]         @default([]) @map("notify_emails")
+  status         ActiveStatus     @default(active)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  submissions    FormSubmission[]
+
+  @@map("forms")
+}
+
+model FormSubmission {
+  id         String           @id @default(uuid()) @db.Uuid
+  formId     String           @map("form_id") @db.Uuid
+  formName   String           @map("form_name") @db.VarChar(160)
+  formType   FormType         @map("form_type")
+  data       Json
+  fullName   String?          @map("full_name") @db.VarChar(160)
+  email      String?          @db.VarChar(160)
+  phone      String?          @db.VarChar(40)
+  status     SubmissionStatus @default(new)
+  assignedTo String?          @map("assigned_to") @db.Uuid
+  notes      String?
+  source     Json?
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  form       Form             @relation(fields: [formId], references: [id], onDelete: Restrict)
+  assignee   User?            @relation(fields: [assignedTo], references: [id], onDelete: SetNull)
+
+  @@index([formId])
+  @@index([status, createdAt(sort: Desc)])
+  @@map("form_submissions")
+}
+
+model Testimonial {
+  id          String        @id @default(uuid()) @db.Uuid
+  studentName String        @map("student_name") @db.VarChar(120)
+  headline    String        @db.VarChar(200)
+  quote       String
+  avatarUrl   String?       @map("avatar_url")
+  scoreBefore Int?          @map("score_before")
+  scoreAfter  Int           @map("score_after")
+  rating      Int           @default(5)
+  courseId    String?       @map("course_id") @db.Uuid
+  videoUrl    String?       @map("video_url")
+  isFeatured  Boolean       @default(false) @map("is_featured")
+  status      ContentStatus @default(draft)
+  sortOrder   Int           @default(0) @map("sort_order")
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  course      Course?       @relation(fields: [courseId], references: [id], onDelete: SetNull)
+
+  @@index([status, sortOrder])
+  @@map("testimonials")
+}
+
+model Banner {
+  id           String          @id @default(uuid()) @db.Uuid
+  title        String          @db.VarChar(200)
+  placement    BannerPlacement
+  imageUrl     String          @map("image_url")
+  mobileImageUrl String?       @map("mobile_image_url")
+  linkUrl      String?         @map("link_url")
+  altText      String?         @map("alt_text")
+  startAt      DateTime?       @map("start_at") @db.Date
+  endAt        DateTime?       @map("end_at") @db.Date
+  status       BannerStatus    @default(draft)
+  sortOrder    Int             @default(0) @map("sort_order")
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([placement, status])
+  @@map("banners")
+}
+
+model MediaItem {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String    @db.VarChar(255)
+  kind      MediaKind
+  url       String
+  mimeType  String?   @map("mime_type") @db.VarChar(100)
+  sizeKb    Int?      @map("size_kb")
+  width     Int?
+  height    Int?
+  altText   String?   @map("alt_text")
+  folder    String    @default("general") @db.VarChar(80)
+  tags      String[]  @default([])
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([kind, folder])
+  @@map("media_items")
+}
+
+// ── Hệ thống ────────────────────────────────────────────────────────────────
+/// Cấu hình website (singleton: id = 'site').
+model SiteConfig {
+  id            String   @id @default("site") @db.VarChar(20)
+  general       Json
+  contact       Json
+  social        Json
+  policies      Json     @default("[]")
+  chat          Json
+  tracking      Json
+  updatedByName String?  @map("updated_by_name") @db.VarChar(120)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("site_config")
+}
+
+/// Cài đặt hệ thống theo nhóm ('global' | 'integration'). Bí mật nằm ở `secrets` (mã hóa AES-GCM), không bao giờ trả ra API.
+model Setting {
+  group         String   @id @db.VarChar(40)
+  value         Json
+  secrets       Json?
+  updatedByName String?  @map("updated_by_name") @db.VarChar(120)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("settings")
+}
+
+model NotificationTemplate {
+  id        String              @id @default(uuid()) @db.Uuid
+  key       String              @unique @db.VarChar(80)
+  name      String              @db.VarChar(160)
+  channel   NotificationChannel
+  subject   String?
+  body      String
+  variables String[]            @default([])
+  isActive  Boolean             @default(true) @map("is_active")
+  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("notification_templates")
+}
+
+/// Bộ đếm sinh mã tuần tự (HV-00001, GV-001…), cập nhật nguyên tử trong transaction.
+model Counter {
+  name  String @id @db.VarChar(40)
+  value Int    @default(0)
+
+  @@map("counters")
+}
+
+/// Ánh xạ bản ghi legacy → bản ghi mới: làm cho script migrate chạy lại an toàn (idempotent) và cho phép đối soát/rollback.
+model LegacyMap {
+  source     String   @db.VarChar(60)
+  sourceId   String   @map("source_id") @db.VarChar(60)
+  targetTable String  @map("target_table") @db.VarChar(60)
+  targetId   String   @map("target_id") @db.VarChar(80)
+  migratedAt DateTime @default(now()) @map("migrated_at") @db.Timestamptz(6)
+
+  @@id([source, sourceId])
+  @@index([targetTable, targetId])
+  @@map("legacy_map")
 }
