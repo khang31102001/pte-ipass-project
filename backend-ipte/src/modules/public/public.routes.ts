@@ -69,7 +69,7 @@ type CourseRow = Prisma.CourseGetPayload<{ include: typeof courseInclude }>;
 
 const slugOfTeacher = (t: { slug: string }) => t.slug;
 
-const toCourse = (c: CourseRow): PublicCourse =>
+const toCourse = (c: CourseRow, withDescription = false): PublicCourse =>
   compact({
     id: c.id,
     name: c.name,
@@ -85,7 +85,7 @@ const toCourse = (c: CourseRow): PublicCourse =>
     sessionsCount: c.sessionsCount,
     tuition: c.tuition,
     summary: c.summary,
-    description: c.description ?? undefined,
+    description: withDescription ? (c.description ?? undefined) : undefined,
     outcomes: c.outcomes,
     audience: c.audience,
     isFeatured: c.isFeatured,
@@ -120,7 +120,7 @@ publicRouter.get(
       { id: "asc" },
     ];
     const [rows, total] = await Promise.all([prisma.course.findMany({ where, orderBy, skip: p.skip, take: p.pageSize, include: courseInclude }), prisma.course.count({ where })]);
-    return list(res, rows.map(toCourse), p, total);
+    return list(res, rows.map((r) => toCourse(r)), p, total);
   }),
 );
 
@@ -129,7 +129,7 @@ publicRouter.get(
   handler(async (req, res) => {
     const course = await prisma.course.findFirst({ where: { slug: String(req.params["slug"]), status: "published" }, include: courseInclude });
     if (!course) throw notFound("Khóa học không tồn tại");
-    return ok(res, toCourse(course));
+    return ok(res, toCourse(course, true));
   }),
 );
 
@@ -137,13 +137,13 @@ publicRouter.get(
 const articleInclude = { category: true, author: { select: { fullName: true } }, tags: { include: { tag: true } } } satisfies Prisma.ArticleInclude;
 type ArticleRow = Prisma.ArticleGetPayload<{ include: typeof articleInclude }>;
 
-const toArticle = (a: ArticleRow): PublicArticle =>
+const toArticle = (a: ArticleRow, full = false): PublicArticle =>
   compact({
     id: a.id,
     title: a.title,
     slug: a.slug,
     excerpt: a.excerpt,
-    content: a.content,
+    content: full ? a.content : "",
     coverUrl: a.coverUrl ?? undefined,
     categoryId: a.categoryId,
     categoryName: a.category.name,
@@ -179,7 +179,7 @@ publicRouter.get(
     const dir = p.raw["sortOrder"] === "asc" ? "asc" : "desc";
     const orderBy: Prisma.ArticleOrderByWithRelationInput[] = [p.raw["sortBy"] === "title" ? { title: dir } : { publishedAt: dir }, { id: "asc" }];
     const [rows, total] = await Promise.all([prisma.article.findMany({ where, orderBy, skip: p.skip, take: p.pageSize, include: articleInclude }), prisma.article.count({ where })]);
-    return list(res, rows.map(toArticle), p, total);
+    return list(res, rows.map((r) => toArticle(r)), p, total);
   }),
 );
 
@@ -191,7 +191,7 @@ publicRouter.get(
     const related = await prisma.article.findMany({ where: { status: "published", categoryId: article.categoryId, id: { not: article.id } }, orderBy: { publishedAt: "desc" }, take: 6, include: articleInclude });
     // Đếm lượt xem không chặn phản hồi.
     void prisma.article.update({ where: { id: article.id }, data: { viewCount: { increment: 1 } } }).catch(() => undefined);
-    const detail: PublicArticleDetail = { ...toArticle(article), related: related.map(toArticle) };
+    const detail: PublicArticleDetail = { ...toArticle(article, true), related: related.map((r) => toArticle(r)) };
     return ok(res, detail);
   }),
 );
